@@ -8,7 +8,6 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
-    
     <style>
         body {
             font-family: 'Press Start 2P', monospace;
@@ -29,11 +28,52 @@
             transform: translate(3px, 3px);
             box-shadow: 0px 0px 0px #000;
         }
+
+        /* Autocomplete */
+        #coin-id-wrapper { position: relative; }
+        #autocomplete-list {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 0; right: 0;
+            z-index: 999;
+            background: #000;
+            border: 4px solid #fff;
+            box-shadow: 4px 4px 0px #000;
+            max-height: 220px;
+            overflow-y: auto;
+        }
+        #autocomplete-list.open { display: block; }
+        #autocomplete-list::-webkit-scrollbar { width: 6px; }
+        #autocomplete-list::-webkit-scrollbar-track { background: #000; }
+        #autocomplete-list::-webkit-scrollbar-thumb { background: #444; }
+
+        .ac-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 10px;
+            cursor: pointer;
+            border-bottom: 1px solid #333;
+        }
+        .ac-item:last-child { border-bottom: none; }
+        .ac-item:hover, .ac-item.active { background: #1a1a2e; }
+        .ac-logo { width: 20px; height: 20px; image-rendering: pixelated; flex-shrink: 0; }
+        .ac-logo-placeholder {
+            width: 20px; height: 20px;
+            background: #333; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 10px;
+        }
+        .ac-name   { font-size: 9px;  color: #e2e8f0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .ac-symbol { font-size: 8px;  color: #facc15; flex-shrink: 0; }
+        .ac-id     { font-size: 7px;  color: #6b7280; flex-shrink: 0; }
     </style>
 </head>
 <body class="p-4 md:p-8 min-h-screen flex flex-col items-center">
 
     <div class="max-w-4xl w-full">
+
         <header class="text-center mb-8">
             <h1 class="text-xl md:text-3xl text-yellow-400 mb-2">RETRO CRYPTO DECK v3</h1>
             <p class="text-[10px] text-gray-400">Track any token, rename slots, and sync devices</p>
@@ -42,7 +82,6 @@
         <section class="mb-8 bg-zinc-900 p-4 pixel-border">
             <h2 class="text-xs text-cyan-400 mb-4">SELECT SAVE SLOT:</h2>
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4" id="profile-slots"></div>
-            
             <div class="border-t border-zinc-700 pt-4 mt-2">
                 <h3 class="text-[10px] text-orange-400 mb-2">DECK OPTIONS & PASSCODE SYSTEMS</h3>
                 <div class="flex flex-wrap gap-2">
@@ -62,15 +101,20 @@
 
             <section class="bg-zinc-900 p-4 mb-8 pixel-border">
                 <h3 class="text-xs text-purple-400 mb-2">MINT NEW CARD</h3>
-                <p class="text-[9px] text-gray-400 mb-4">Type the official CoinGecko ID (e.g., bitcoin, dogecoin, polkadot, solana, cardano)</p>
+                <p class="text-[9px] text-gray-400 mb-4">Type a coin name or symbol — top 50 will autocomplete</p>
                 <form id="add-holding-form" class="flex flex-col sm:flex-row gap-4 items-end">
                     <div class="flex-1 w-full">
                         <label class="block text-[10px] mb-2">TOKEN COINGECKO ID:</label>
-                        <input type="text" id="coin-id" required placeholder="e.g., solana" class="w-full bg-black p-2 pixel-border text-xs text-white focus:outline-none lowercase">
+                        <div id="coin-id-wrapper">
+                            <input type="text" id="coin-id" required autocomplete="off" placeholder="e.g., solana"
+                                class="w-full bg-black p-2 pixel-border text-xs text-white focus:outline-none lowercase">
+                            <div id="autocomplete-list"></div>
+                        </div>
                     </div>
                     <div class="flex-1 w-full">
                         <label class="block text-[10px] mb-2">AMOUNT:</label>
-                        <input type="number" id="coin-amount" step="any" required placeholder="0.00" class="w-full bg-black p-2 pixel-border text-xs text-white focus:outline-none">
+                        <input type="number" id="coin-amount" step="any" required placeholder="0.00"
+                            class="w-full bg-black p-2 pixel-border text-xs text-white focus:outline-none">
                     </div>
                     <button type="submit" class="w-full sm:w-auto bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 text-xs pixel-btn cursor-pointer">MINT</button>
                 </form>
@@ -79,72 +123,100 @@
             <h3 class="text-xs text-yellow-400 mb-4">YOUR CARD DECK:</h3>
             <div id="card-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6"></div>
         </main>
+
     </div>
 
     <script>
+        // ── State ──────────────────────────────────────────────────────────
+        const STORAGE_KEY  = 'retroCryptoDataV3';
+        const COIN_LIST_KEY = 'retroCryptoCoinList';
+        const CACHE_TTL    = 24 * 60 * 60 * 1000; // 24 hours
+
         let appData = {
             activeProfile: null,
             profiles: {
-                slot_1: { name: "SLOT 1: MAIN", holdings: [] },
-                slot_2: { name: "SLOT 2: ALTS", holdings: [] },
-                slot_3: { name: "SLOT 3: YIELD", holdings: [] }
+                slot_1: { name: 'SLOT 1: MAIN',  holdings: [] },
+                slot_2: { name: 'SLOT 2: ALTS',  holdings: [] },
+                slot_3: { name: 'SLOT 3: YIELD', holdings: [] }
             }
         };
 
-        // Migrate older versions gracefully or load existing v3 cache
-        if (localStorage.getItem('retroCryptoDataV3')) {
-            appData = JSON.parse(localStorage.getItem('retroCryptoDataV3'));
-        } else if (localStorage.getItem('retroCryptoDataV2')) {
-            appData = JSON.parse(localStorage.getItem('retroCryptoDataV2'));
-        }
+        // Migrate V2 → V3 or load existing V3
+        const stored = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('retroCryptoDataV2');
+        if (stored) appData = JSON.parse(stored);
 
         let cryptoPrices = {};
+        let coinList = []; // [{ id, name, symbol, image }]
 
-        async function fetchPrices() {
-            let idsToFetch = ['bitcoin', 'ethereum', 'dogecoin', 'polkadot']; 
-            
-            Object.values(appData.profiles).forEach(profile => {
-                profile.holdings.forEach(holding => {
-                    if (!idsToFetch.includes(holding.id)) {
-                        idsToFetch.push(holding.id);
-                    }
-                });
-            });
+        function saveData() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
+        }
 
-            try {
-                const response = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${idsToFetch.join(',')}&vs_currencies=usd,thb`);
-                if (response.ok) {
-                    cryptoPrices = await response.json();
-                    updateDashboardUI();
+        // ── Coin list cache ────────────────────────────────────────────────
+        async function loadCoinList() {
+            const cached = localStorage.getItem(COIN_LIST_KEY);
+            if (cached) {
+                const { coins, fetchedAt } = JSON.parse(cached);
+                if (Date.now() - fetchedAt < CACHE_TTL) {
+                    coinList = coins;
+                    return;
                 }
-            } catch (error) {
-                console.log("API tracking update throttle or offline.");
+            }
+            try {
+                const res = await fetch(
+                    'https://api.coingecko.com/api/v3/coins/markets' +
+                    '?vs_currency=usd&order=market_cap_desc&per_page=50&page=1&sparkline=false'
+                );
+                if (!res.ok) return;
+                const data = await res.json();
+                coinList = data.map(c => ({
+                    id: c.id, name: c.name,
+                    symbol: c.symbol.toUpperCase(), image: c.image
+                }));
+                localStorage.setItem(COIN_LIST_KEY, JSON.stringify({ coins: coinList, fetchedAt: Date.now() }));
+            } catch (e) {
+                console.warn('Could not fetch coin list:', e);
             }
         }
 
-        function saveData() {
-            localStorage.setItem('retroCryptoDataV3', JSON.stringify(appData));
+        // ── Price fetching ─────────────────────────────────────────────────
+        async function fetchPrices() {
+            const ids = [...new Set(
+                Object.values(appData.profiles)
+                    .flatMap(p => p.holdings.map(h => h.id))
+                    .concat(['bitcoin', 'ethereum', 'dogecoin', 'polkadot'])
+            )];
+            try {
+                const res = await fetch(
+                    `https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(',')}&vs_currencies=usd,thb`
+                );
+                if (res.ok) {
+                    cryptoPrices = await res.json();
+                    updateDashboardUI();
+                }
+            } catch (e) {
+                console.log('Price fetch failed — offline or rate limited.');
+            }
         }
 
+        // ── Profile slots ──────────────────────────────────────────────────
         function renderProfiles() {
             const container = document.getElementById('profile-slots');
             container.innerHTML = '';
-            
-            Object.keys(appData.profiles).forEach(slotKey => {
-                const profile = appData.profiles[slotKey];
-                const isActive = appData.activeProfile === slotKey;
-                
-                const slotDiv = document.createElement('div');
-                slotDiv.className = `p-3 text-center cursor-pointer pixel-btn text-[10px] break-all ${isActive ? 'bg-cyan-700 border-yellow-400 text-white' : 'bg-zinc-800 hover:bg-zinc-700 text-gray-300'}`;
-                slotDiv.innerText = profile.name;
-                slotDiv.onclick = () => selectProfile(slotKey);
-                
-                container.appendChild(slotDiv);
+            Object.entries(appData.profiles).forEach(([key, profile]) => {
+                const isActive = appData.activeProfile === key;
+                const el = document.createElement('div');
+                el.className = `p-3 text-center cursor-pointer pixel-btn text-[10px] break-all ${
+                    isActive ? 'bg-cyan-700 border-yellow-400 text-white' : 'bg-zinc-800 hover:bg-zinc-700 text-gray-300'
+                }`;
+                el.innerText = profile.name;
+                el.onclick = () => selectProfile(key);
+                container.appendChild(el);
             });
         }
 
-        function selectProfile(slotKey) {
-            appData.activeProfile = slotKey;
+        function selectProfile(key) {
+            appData.activeProfile = key;
             saveData();
             renderProfiles();
             document.getElementById('dashboard').classList.remove('hidden');
@@ -152,140 +224,206 @@
             updateDashboardUI();
         }
 
-        // Feature: Rename Active Slot Customization
-        window.renameActiveProfile = function() {
+        window.renameActiveProfile = function () {
             if (!appData.activeProfile) return;
-            
-            const currentProfile = appData.profiles[appData.activeProfile];
-            const newName = prompt("ENTER NEW NAME FOR THIS SAVE SLOT:", currentProfile.name);
-            
-            if (newName && newName.trim() !== "") {
-                currentProfile.name = newName.trim().toUpperCase();
+            const profile = appData.profiles[appData.activeProfile];
+            const name = prompt('ENTER NEW NAME FOR THIS SAVE SLOT:', profile.name);
+            if (name?.trim()) {
+                profile.name = name.trim().toUpperCase();
                 saveData();
                 renderProfiles();
                 updateDashboardUI();
             }
-        }
+        };
+
+        // ── Dashboard ──────────────────────────────────────────────────────
+        const CARD_COLORS = {
+            bitcoin:  'text-amber-500',
+            ethereum: 'text-indigo-400',
+            dogecoin: 'text-yellow-500',
+            polkadot: 'text-pink-500',
+            solana:   'text-emerald-400'
+        };
+        const FALLBACK_ICONS = {
+            bitcoin: '🪙', ethereum: '💎', dogecoin: '🐕', polkadot: '🔮', solana: '☀️'
+        };
 
         function updateDashboardUI() {
             if (!appData.activeProfile) return;
-            
-            const currentProfile = appData.profiles[appData.activeProfile];
-            document.getElementById('deck-title').innerText = `${currentProfile.name} TOTAL VALUE`;
-            
+            const profile = appData.profiles[appData.activeProfile];
+            document.getElementById('deck-title').innerText = `${profile.name} TOTAL VALUE`;
+
+            let totalUSD = 0, totalTHB = 0;
             const cardGrid = document.getElementById('card-grid');
             cardGrid.innerHTML = '';
-            
-            let totalUSD = 0;
-            let totalTHB = 0;
 
-            currentProfile.holdings.forEach((holding, index) => {
+            profile.holdings.forEach((holding, index) => {
                 const prices = cryptoPrices[holding.id] || { usd: 0, thb: 0 };
-                const holdingValueUSD = holding.amount * prices.usd;
-                const holdingValueTHB = holding.amount * prices.thb;
-                
-                totalUSD += holdingValueUSD;
-                totalTHB += holdingValueTHB;
+                const valueUSD = holding.amount * prices.usd;
+                const valueTHB = holding.amount * prices.thb;
+                totalUSD += valueUSD;
+                totalTHB += valueTHB;
+
+                const meta = coinList.find(c => c.id === holding.id);
+                const logoHTML = meta?.image
+                    ? `<img src="${meta.image}" style="width:48px;height:48px;image-rendering:pixelated;" alt="${holding.id}">`
+                    : `<span style="font-size:2rem">${FALLBACK_ICONS[holding.id] || '🪙'}</span>`;
+                const symbolBadge = meta
+                    ? `<span class="text-[8px] text-gray-400 ml-1">${meta.symbol}</span>` : '';
 
                 const card = document.createElement('div');
-                card.className = "bg-zinc-800 p-4 pixel-border flex flex-col justify-between border-gray-600 relative";
-                
-                let cardIcon = '🪙';
-                let cardColor = "text-purple-400";
-                
-                if (holding.id === 'bitcoin') { cardIcon = '🪙'; cardColor = "text-amber-500"; }
-                else if (holding.id === 'ethereum') { cardIcon = '💎'; cardColor = "text-indigo-400"; }
-                else if (holding.id === 'dogecoin') { cardIcon = '🐕'; cardColor = "text-yellow-500"; }
-                else if (holding.id === 'polkadot') { cardIcon = '🔮'; cardColor = "text-pink-500"; }
-                else if (holding.id === 'solana') { cardIcon = '☀️'; cardColor = "text-emerald-400"; }
-
+                card.className = 'bg-zinc-800 p-4 pixel-border flex flex-col justify-between border-gray-600';
                 card.innerHTML = `
                     <div>
                         <div class="flex justify-between items-start mb-4">
-                            <span class="text-[10px] ${cardColor} break-all">${holding.id.toUpperCase()}</span>
+                            <span class="text-[10px] ${CARD_COLORS[holding.id] || 'text-purple-400'} break-all">
+                                ${holding.id.toUpperCase()}${symbolBadge}
+                            </span>
                             <button onclick="deleteCard(${index})" class="text-[9px] text-red-500 hover:text-red-400 cursor-pointer pl-2">[X]</button>
                         </div>
-                        <div class="bg-black h-24 flex items-center justify-center pixel-border border-zinc-700 mb-4 text-2xl">
-                            ${cardIcon}
+                        <div class="bg-black h-24 flex items-center justify-center pixel-border border-zinc-700 mb-4">
+                            ${logoHTML}
                         </div>
                         <div class="text-[9px] text-gray-400 mb-1">QTY: <span class="text-white">${holding.amount.toLocaleString()}</span></div>
                     </div>
                     <div class="mt-4 pt-2 border-t border-zinc-700">
-                        <div class="text-[9px] text-green-400">$${holdingValueUSD.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
-                        <div class="text-[9px] text-yellow-300">${holdingValueTHB.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} ฿</div>
-                    </div>
-                `;
+                        <div class="text-[9px] text-green-400">$${fmt(valueUSD)}</div>
+                        <div class="text-[9px] text-yellow-300">${fmt(valueTHB)} ฿</div>
+                    </div>`;
                 cardGrid.appendChild(card);
             });
 
-            document.getElementById('total-usd').innerText = `$${totalUSD.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} USD`;
-            document.getElementById('total-thb').innerText = `${totalTHB.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} THB`;
+            document.getElementById('total-usd').innerText = `$${fmt(totalUSD)} USD`;
+            document.getElementById('total-thb').innerText = `${fmt(totalTHB)} THB`;
         }
 
-        document.getElementById('add-holding-form').addEventListener('submit', function(e) {
-            e.preventDefault();
-            if (!appData.activeProfile) return alert("Please select a save slot first!");
+        const fmt = n => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-            const coinId = document.getElementById('coin-id').value.trim().toLowerCase();
-            const amount = parseFloat(document.getElementById('coin-amount').value);
+        // ── Autocomplete ───────────────────────────────────────────────────
+        const coinInput = document.getElementById('coin-id');
+        const acList    = document.getElementById('autocomplete-list');
+        let acResults   = [];
+        let acIndex     = -1;
 
-            if (amount > 0 && coinId !== "") {
-                const currentProfile = appData.profiles[appData.activeProfile];
-                const existingIndex = currentProfile.holdings.findIndex(h => h.id === coinId);
-                
-                if (existingIndex > -1) {
-                    currentProfile.holdings[existingIndex].amount += amount;
-                } else {
-                    currentProfile.holdings.push({ id: coinId, amount: amount });
-                }
-
-                saveData();
-                fetchPrices();
-                document.getElementById('coin-id').value = '';
-                document.getElementById('coin-amount').value = '';
-            }
+        coinInput.addEventListener('input', () => {
+            const q = coinInput.value.trim().toLowerCase();
+            acIndex = -1;
+            if (!q) return closeAC();
+            acResults = coinList.filter(c =>
+                c.id.includes(q) || c.name.toLowerCase().includes(q) || c.symbol.toLowerCase().includes(q)
+            ).slice(0, 8);
+            acResults.length ? renderAC() : closeAC();
         });
 
-        window.deleteCard = function(index) {
-            if(confirm("Discard this card from your deck?")) {
+        coinInput.addEventListener('keydown', e => {
+            const items = acList.querySelectorAll('.ac-item');
+            if (!items.length) return;
+            if (e.key === 'ArrowDown') { e.preventDefault(); acIndex = Math.min(acIndex + 1, items.length - 1); highlightAC(items); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); acIndex = Math.max(acIndex - 1, 0); highlightAC(items); }
+            else if (e.key === 'Enter' && acIndex >= 0) { e.preventDefault(); pickCoin(acResults[acIndex]); }
+            else if (e.key === 'Escape') closeAC();
+        });
+
+        document.addEventListener('click', e => {
+            if (!document.getElementById('coin-id-wrapper').contains(e.target)) closeAC();
+        });
+
+        function renderAC() {
+            acList.innerHTML = '';
+            acResults.forEach((coin, i) => {
+                const item = document.createElement('div');
+                item.className = 'ac-item';
+                item.innerHTML = `
+                    ${coin.image
+                        ? `<img class="ac-logo" src="${coin.image}" alt="${coin.symbol}" loading="lazy">`
+                        : `<div class="ac-logo-placeholder">${coin.symbol[0]}</div>`}
+                    <span class="ac-name">${coin.name}</span>
+                    <span class="ac-symbol">${coin.symbol}</span>
+                    <span class="ac-id">${coin.id}</span>`;
+                item.addEventListener('mousedown', e => { e.preventDefault(); pickCoin(coin); });
+                item.addEventListener('mouseover', () => { acIndex = i; highlightAC(acList.querySelectorAll('.ac-item')); });
+                acList.appendChild(item);
+            });
+            acList.classList.add('open');
+        }
+
+        function highlightAC(items) {
+            items.forEach((el, i) => el.classList.toggle('active', i === acIndex));
+        }
+
+        function pickCoin(coin) {
+            coinInput.value = coin.id;
+            closeAC();
+            document.getElementById('coin-amount').focus();
+        }
+
+        function closeAC() {
+            acList.classList.remove('open');
+            acList.innerHTML = '';
+            acResults = [];
+            acIndex = -1;
+        }
+
+        // ── Form submit ────────────────────────────────────────────────────
+        document.getElementById('add-holding-form').addEventListener('submit', function (e) {
+            e.preventDefault();
+            if (!appData.activeProfile) return alert('Please select a save slot first!');
+            const coinId = coinInput.value.trim().toLowerCase();
+            const amount = parseFloat(document.getElementById('coin-amount').value);
+            if (!coinId || !(amount > 0)) return;
+
+            const profile = appData.profiles[appData.activeProfile];
+            const existing = profile.holdings.findIndex(h => h.id === coinId);
+            if (existing > -1) profile.holdings[existing].amount += amount;
+            else profile.holdings.push({ id: coinId, amount });
+
+            saveData();
+            closeAC();
+            fetchPrices();
+            coinInput.value = '';
+            document.getElementById('coin-amount').value = '';
+        });
+
+        window.deleteCard = function (index) {
+            if (confirm('Discard this card from your deck?')) {
                 appData.profiles[appData.activeProfile].holdings.splice(index, 1);
                 saveData();
                 updateDashboardUI();
             }
-        }
+        };
 
-        window.exportSaveCode = function() {
-            const dataString = btoa(unescape(encodeURIComponent(JSON.stringify(appData))));
-            const tempInput = document.createElement("input");
-            document.body.appendChild(tempInput);
-            tempInput.value = dataString;
-            tempInput.select();
-            document.execCommand("copy");
-            document.body.removeChild(tempInput);
-            
-            alert("SAVE CODE COPIED TO CLIPBOARD!\n\nPaste it into a safe text note or use it to load your files on another machine.");
-        }
+        // ── Save code export / import ──────────────────────────────────────
+        window.exportSaveCode = function () {
+            const code = btoa(unescape(encodeURIComponent(JSON.stringify(appData))));
+            const input = document.createElement('input');
+            document.body.appendChild(input);
+            input.value = code;
+            input.select();
+            document.execCommand('copy');
+            document.body.removeChild(input);
+            alert('SAVE CODE COPIED TO CLIPBOARD!\n\nPaste it somewhere safe or use it to load your deck on another device.');
+        };
 
-        window.importSaveCode = function() {
-            const code = prompt("PASTE YOUR SAVE CODE HERE:");
-            if (code) {
-                try {
-                    const parsedData = JSON.parse(decodeURIComponent(escape(atob(code))));
-                    if(parsedData.profiles) {
-                        appData = parsedData;
-                        saveData();
-                        renderProfiles();
-                        fetchPrices();
-                        alert("SAVE DATA LOADED SUCCESSFULLY!");
-                    }
-                } catch (e) {
-                    alert("INVALID SAVE CODE. Please verify you copied the entire text layout string.");
-                }
+        window.importSaveCode = function () {
+            const code = prompt('PASTE YOUR SAVE CODE HERE:');
+            if (!code) return;
+            try {
+                const parsed = JSON.parse(decodeURIComponent(escape(atob(code))));
+                if (!parsed.profiles) throw new Error();
+                appData = parsed;
+                saveData();
+                renderProfiles();
+                fetchPrices();
+                alert('SAVE DATA LOADED SUCCESSFULLY!');
+            } catch {
+                alert('INVALID SAVE CODE. Please verify you copied the entire string.');
             }
-        }
+        };
 
+        // ── Init ───────────────────────────────────────────────────────────
         renderProfiles();
         fetchPrices();
+        loadCoinList();
         setInterval(fetchPrices, 30000);
     </script>
 </body>
