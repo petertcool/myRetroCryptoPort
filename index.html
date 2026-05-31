@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Retro Crypto Deck v3</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
@@ -15,416 +16,832 @@
             color: #e2e8f0;
             image-rendering: pixelated;
         }
-        .pixel-border {
-            border: 4px solid #fff;
-            box-shadow: 4px 4px 0px #000;
-        }
+        .pixel-border { border: 4px solid #fff; box-shadow: 4px 4px 0px #000; }
         .pixel-btn {
-            border: 4px solid #fff;
-            box-shadow: 3px 3px 0px #000;
+            border: 4px solid #fff; box-shadow: 3px 3px 0px #000;
             transition: transform 0.1s, box-shadow 0.1s;
         }
-        .pixel-btn:active {
-            transform: translate(3px, 3px);
-            box-shadow: 0px 0px 0px #000;
-        }
+        .pixel-btn:active { transform: translate(3px, 3px); box-shadow: 0px 0px 0px #000; }
 
         /* Autocomplete */
         #coin-id-wrapper { position: relative; }
         #autocomplete-list {
-            display: none;
-            position: absolute;
-            top: 100%;
-            left: 0; right: 0;
-            z-index: 999;
-            background: #000;
-            border: 4px solid #fff;
-            box-shadow: 4px 4px 0px #000;
-            max-height: 220px;
-            overflow-y: auto;
+            display: none; position: absolute; top: 100%; left: 0; right: 0;
+            z-index: 999; background: #000; border: 4px solid #fff;
+            box-shadow: 4px 4px 0px #000; max-height: 220px; overflow-y: auto;
         }
         #autocomplete-list.open { display: block; }
         #autocomplete-list::-webkit-scrollbar { width: 6px; }
         #autocomplete-list::-webkit-scrollbar-track { background: #000; }
         #autocomplete-list::-webkit-scrollbar-thumb { background: #444; }
-
         .ac-item {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 8px 10px;
-            cursor: pointer;
-            border-bottom: 1px solid #333;
+            display: flex; align-items: center; gap: 10px;
+            padding: 8px 10px; cursor: pointer; border-bottom: 1px solid #333;
         }
         .ac-item:last-child { border-bottom: none; }
         .ac-item:hover, .ac-item.active { background: #1a1a2e; }
         .ac-logo { width: 20px; height: 20px; image-rendering: pixelated; flex-shrink: 0; }
         .ac-logo-placeholder {
-            width: 20px; height: 20px;
-            background: #333; flex-shrink: 0;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 10px;
+            width: 20px; height: 20px; background: #333; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center; font-size: 10px;
         }
         .ac-name   { font-size: 9px;  color: #e2e8f0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .ac-symbol { font-size: 8px;  color: #facc15; flex-shrink: 0; }
         .ac-id     { font-size: 7px;  color: #6b7280; flex-shrink: 0; }
+
+        /* Modal */
+        #edit-modal {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.85); z-index: 1000;
+            overflow-y: auto; padding: 16px;
+        }
+        #edit-modal.open { display: flex; align-items: flex-start; justify-content: center; }
+        #edit-modal-box {
+            background: #121214; border: 4px solid #fff;
+            box-shadow: 6px 6px 0px #000; width: 100%; max-width: 680px;
+            margin: auto;
+        }
+
+        /* Modal table inputs */
+        .lot-input, .loc-input {
+            background: #000; border: 2px solid #444; color: #e2e8f0;
+            font-family: 'Press Start 2P', monospace; font-size: 8px;
+            padding: 4px 6px; width: 100%; focus: outline-none;
+        }
+        .lot-input:focus, .loc-input:focus { border-color: #fff; outline: none; }
+
+        select.lot-input {
+            cursor: pointer;
+            -webkit-appearance: none;
+        }
+
+        /* Sort bar */
+        .sort-btn { font-size: 8px; padding: 4px 8px; cursor: pointer; border: 2px solid #555; background: #1a1a1a; color: #888; }
+        .sort-btn.active { border-color: #facc15; color: #facc15; }
+
+        /* P&L colours */
+        .pl-pos { color: #4ade80; }
+        .pl-neg { color: #f87171; }
+        .pl-zero { color: #9ca3af; }
+
+        /* Clickable card */
+        .crypto-card {
+            cursor: pointer;
+            transition: border-color 0.15s, box-shadow 0.15s;
+        }
+        .crypto-card:hover {
+            border-color: #facc15;
+            box-shadow: 4px 4px 0px #facc15;
+        }
+        /* Drag ghost */
+        .sortable-ghost { opacity: 0.3; }
+        .sortable-drag   { opacity: 0.9; cursor: grabbing; }
     </style>
 </head>
 <body class="p-4 md:p-8 min-h-screen flex flex-col items-center">
 
-    <div class="max-w-4xl w-full">
+<div class="max-w-4xl w-full">
 
-        <header class="text-center mb-8">
-            <h1 class="text-xl md:text-3xl text-yellow-400 mb-2">RETRO CRYPTO DECK v3</h1>
-            <p class="text-[10px] text-gray-400">Track any token, rename slots, and sync devices</p>
-        </header>
+    <header class="text-center mb-8">
+        <h1 class="text-xl md:text-3xl text-yellow-400 mb-2">RETRO CRYPTO DECK v3</h1>
+        <p class="text-[10px] text-gray-400">Track any token, rename slots, and sync devices</p>
+    </header>
 
-        <section class="mb-8 bg-zinc-900 p-4 pixel-border">
-            <h2 class="text-xs text-cyan-400 mb-4">SELECT SAVE SLOT:</h2>
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4" id="profile-slots"></div>
-            <div class="border-t border-zinc-700 pt-4 mt-2">
-                <h3 class="text-[10px] text-orange-400 mb-2">DECK OPTIONS & PASSCODE SYSTEMS</h3>
-                <div class="flex flex-wrap gap-2">
-                    <button onclick="renameActiveProfile()" id="rename-btn" class="hidden bg-purple-700 hover:bg-purple-600 text-white px-3 py-2 text-[9px] pixel-btn cursor-pointer">RENAME ACTIVE SLOT</button>
-                    <button onclick="exportSaveCode()" class="bg-amber-600 hover:bg-amber-500 text-white px-3 py-2 text-[9px] pixel-btn cursor-pointer">GENERATE SAVE CODE</button>
-                    <button onclick="importSaveCode()" class="bg-zinc-700 hover:bg-zinc-600 text-white px-3 py-2 text-[9px] pixel-btn cursor-pointer">LOAD SAVE CODE</button>
+    <section class="mb-8 bg-zinc-900 p-4 pixel-border">
+        <h2 class="text-xs text-cyan-400 mb-4">SELECT SAVE SLOT:</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4" id="profile-slots"></div>
+        <div class="border-t border-zinc-700 pt-4 mt-2">
+            <h3 class="text-[10px] text-orange-400 mb-2">DECK OPTIONS & PASSCODE SYSTEMS</h3>
+            <div class="flex flex-wrap gap-2">
+                <button onclick="renameActiveProfile()" id="rename-btn" class="hidden bg-purple-700 hover:bg-purple-600 text-white px-3 py-2 text-[9px] pixel-btn cursor-pointer">RENAME ACTIVE SLOT</button>
+                <button onclick="exportSaveCode()" class="bg-amber-600 hover:bg-amber-500 text-white px-3 py-2 text-[9px] pixel-btn cursor-pointer">GENERATE SAVE CODE</button>
+                <button onclick="importSaveCode()" class="bg-zinc-700 hover:bg-zinc-600 text-white px-3 py-2 text-[9px] pixel-btn cursor-pointer">LOAD SAVE CODE</button>
+            </div>
+        </div>
+    </section>
+
+    <main id="dashboard" class="hidden">
+        <div class="bg-blue-900 p-6 mb-8 pixel-border text-center">
+            <h2 class="text-xs text-blue-300 mb-2" id="deck-title">TOTAL DECK VALUE</h2>
+            <div class="text-lg md:text-2xl text-green-400 mb-2" id="total-usd">$0.00 USD</div>
+            <div class="text-sm md:text-lg text-yellow-300 mb-2" id="total-thb">0.00 THB</div>
+            <div class="text-[10px]" id="total-pl"></div>
+        </div>
+
+        <!-- Mint -->
+        <section class="bg-zinc-900 p-4 mb-6 pixel-border">
+            <h3 class="text-xs text-purple-400 mb-2">MINT NEW CARD</h3>
+            <p class="text-[9px] text-gray-400 mb-4">Type a coin name or symbol — top 50 will autocomplete. Add lots via the card editor after minting.</p>
+            <div class="flex flex-col sm:flex-row gap-4 items-end">
+                <div class="flex-1 w-full">
+                    <label class="block text-[10px] mb-2">TOKEN COINGECKO ID:</label>
+                    <div id="coin-id-wrapper">
+                        <input type="text" id="coin-id" autocomplete="off" placeholder="e.g., solana"
+                            class="w-full bg-black p-2 pixel-border text-xs text-white focus:outline-none lowercase">
+                        <div id="autocomplete-list"></div>
+                    </div>
                 </div>
+                <button onclick="mintCard()" class="w-full sm:w-auto bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 text-xs pixel-btn cursor-pointer">MINT</button>
             </div>
         </section>
 
-        <main id="dashboard" class="hidden">
-            <div class="bg-blue-900 p-6 mb-8 pixel-border text-center">
-                <h2 class="text-xs text-blue-300 mb-2" id="deck-title">TOTAL DECK VALUE</h2>
-                <div class="text-lg md:text-2xl text-green-400 mb-2" id="total-usd">$0.00 USD</div>
-                <div class="text-sm md:text-lg text-yellow-300" id="total-thb">0.00 THB</div>
+        <!-- Sort bar -->
+        <div class="flex items-center gap-2 mb-4 flex-wrap">
+            <span class="text-[9px] text-gray-500">SORT:</span>
+            <button class="sort-btn" id="sort-custom" onclick="setSort('custom')">CUSTOM</button>
+            <button class="sort-btn active" id="sort-value"  onclick="setSort('value')">VALUE</button>
+            <button class="sort-btn"        id="sort-pl"     onclick="setSort('pl')">P&amp;L</button>
+            <button class="sort-btn"        id="sort-change" onclick="setSort('change')">24H</button>
+            <button class="sort-btn"        id="sort-name"   onclick="setSort('name')">NAME</button>
+        </div>
+
+        <h3 class="text-xs text-yellow-400 mb-4">YOUR CARD DECK:</h3>
+        <div id="card-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6"></div>
+    </main>
+
+</div>
+
+<!-- ── Edit Modal ──────────────────────────────────────────────── -->
+<div id="edit-modal">
+    <div id="edit-modal-box" class="p-4">
+
+        <div class="flex justify-between items-center mb-4 border-b border-zinc-700 pb-3">
+            <span class="text-xs text-yellow-400" id="modal-title">EDIT CARD</span>
+            <button onclick="closeModal()" class="text-[10px] text-red-400 hover:text-red-300 cursor-pointer pixel-btn px-2 py-1">✕ CLOSE</button>
+        </div>
+
+        <!-- BUY LOTS -->
+        <div class="mb-6">
+            <div class="flex justify-between items-center mb-3">
+                <h4 class="text-[10px] text-cyan-400">BUY LOTS</h4>
+                <button onclick="addLot()" class="text-[9px] bg-cyan-800 hover:bg-cyan-700 text-white px-2 py-1 pixel-btn cursor-pointer">+ ADD LOT</button>
             </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-[8px] border-collapse mb-3" id="lots-table">
+                    <thead>
+                        <tr class="text-gray-500 border-b border-zinc-700">
+                            <th class="text-left py-1 pr-2">AMOUNT</th>
+                            <th class="text-left py-1 pr-2">BUY PRICE</th>
+                            <th class="text-left py-1 pr-2">CCY</th>
+                            <th class="text-left py-1 pr-2">LABEL</th>
+                            <th class="py-1"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="lots-body"></tbody>
+                </table>
+            </div>
+            <!-- Lot summary -->
+            <div class="bg-zinc-900 p-3 text-[9px] border border-zinc-700" id="lot-summary"></div>
+        </div>
 
-            <section class="bg-zinc-900 p-4 mb-8 pixel-border">
-                <h3 class="text-xs text-purple-400 mb-2">MINT NEW CARD</h3>
-                <p class="text-[9px] text-gray-400 mb-4">Type a coin name or symbol — top 50 will autocomplete</p>
-                <form id="add-holding-form" class="flex flex-col sm:flex-row gap-4 items-end">
-                    <div class="flex-1 w-full">
-                        <label class="block text-[10px] mb-2">TOKEN COINGECKO ID:</label>
-                        <div id="coin-id-wrapper">
-                            <input type="text" id="coin-id" required autocomplete="off" placeholder="e.g., solana"
-                                class="w-full bg-black p-2 pixel-border text-xs text-white focus:outline-none lowercase">
-                            <div id="autocomplete-list"></div>
-                        </div>
-                    </div>
-                    <div class="flex-1 w-full">
-                        <label class="block text-[10px] mb-2">AMOUNT:</label>
-                        <input type="number" id="coin-amount" step="any" required placeholder="0.00"
-                            class="w-full bg-black p-2 pixel-border text-xs text-white focus:outline-none">
-                    </div>
-                    <button type="submit" class="w-full sm:w-auto bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 text-xs pixel-btn cursor-pointer">MINT</button>
-                </form>
-            </section>
+        <!-- CURRENT LOCATIONS -->
+        <div class="mb-6">
+            <div class="flex justify-between items-center mb-3">
+                <h4 class="text-[10px] text-orange-400">CURRENT LOCATIONS</h4>
+                <button onclick="addLocation()" class="text-[9px] bg-orange-800 hover:bg-orange-700 text-white px-2 py-1 pixel-btn cursor-pointer">+ ADD LOCATION</button>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-[8px] border-collapse mb-3" id="locs-table">
+                    <thead>
+                        <tr class="text-gray-500 border-b border-zinc-700">
+                            <th class="text-left py-1 pr-2">LOCATION</th>
+                            <th class="text-left py-1 pr-2">AMOUNT</th>
+                            <th class="py-1"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="locs-body"></tbody>
+                </table>
+            </div>
+            <!-- Location summary + balance check -->
+            <div class="bg-zinc-900 p-3 text-[9px] border border-zinc-700" id="loc-summary"></div>
+        </div>
 
-            <h3 class="text-xs text-yellow-400 mb-4">YOUR CARD DECK:</h3>
-            <div id="card-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6"></div>
-        </main>
-
+        <div class="flex justify-between pt-3 border-t border-zinc-700 gap-3">
+            <button onclick="deleteCardModal()" class="text-[9px] bg-red-900 hover:bg-red-800 text-white px-3 py-2 pixel-btn cursor-pointer">DELETE CARD</button>
+            <div class="flex gap-2">
+                <button onclick="closeModal()" class="text-[9px] bg-zinc-700 hover:bg-zinc-600 text-white px-3 py-2 pixel-btn cursor-pointer">CANCEL</button>
+                <button onclick="saveModal()" class="text-[9px] bg-green-700 hover:bg-green-600 text-white px-3 py-2 pixel-btn cursor-pointer">SAVE</button>
+            </div>
+        </div>
     </div>
+</div>
 
-    <script>
-        // ── State ──────────────────────────────────────────────────────────
-        const STORAGE_KEY  = 'retroCryptoDataV3';
-        const COIN_LIST_KEY = 'retroCryptoCoinList';
-        const CACHE_TTL    = 24 * 60 * 60 * 1000; // 24 hours
+<script>
+// ── Constants ──────────────────────────────────────────────────────────
+const STORAGE_KEY   = 'retroCryptoDataV3';
+const COIN_LIST_KEY = 'retroCryptoCoinList';
+const LOGO_CACHE_KEY = 'retroCryptoLogoCache';
+const CACHE_TTL     = 24 * 60 * 60 * 1000;
 
-        let appData = {
-            activeProfile: null,
-            profiles: {
-                slot_1: { name: 'SLOT 1: MAIN',  holdings: [] },
-                slot_2: { name: 'SLOT 2: ALTS',  holdings: [] },
-                slot_3: { name: 'SLOT 3: YIELD', holdings: [] }
-            }
+const CARD_COLORS = {
+    bitcoin: 'text-amber-500', ethereum: 'text-indigo-400',
+    dogecoin: 'text-yellow-500', polkadot: 'text-pink-500', solana: 'text-emerald-400'
+};
+const FALLBACK_ICONS = {
+    bitcoin: '🪙', ethereum: '💎', dogecoin: '🐕', polkadot: '🔮', solana: '☀️'
+};
+
+// ── State ──────────────────────────────────────────────────────────────
+let appData = {
+    activeProfile: null,
+    profiles: {
+        slot_1: { name: 'SLOT 1: MAIN',  holdings: [] },
+        slot_2: { name: 'SLOT 2: ALTS',  holdings: [] },
+        slot_3: { name: 'SLOT 3: YIELD', holdings: [] }
+    }
+};
+
+const stored = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('retroCryptoDataV2');
+if (stored) {
+    const parsed = JSON.parse(stored);
+    // Migrate old holdings (had {id, amount}) to new structure
+    Object.values(parsed.profiles || {}).forEach(p => {
+        p.holdings = (p.holdings || []).map(h =>
+            h.lots ? h : { id: h.id, lots: h.amount > 0 ? [{ amount: h.amount, buyPrice: 0, ccy: 'USD', label: 'Imported' }] : [], locations: [] }
+        );
+    });
+    appData = parsed;
+}
+
+let cryptoPrices  = {};
+let coinList      = [];
+let usdToThb      = 33; // fallback rate, updated from price data
+let currentSort   = 'value';
+let modalIndex    = null; // index of holding being edited
+let modalLots     = [];   // working copy during edit
+let modalLocs     = [];   // working copy during edit
+
+function saveData() { localStorage.setItem(STORAGE_KEY, JSON.stringify(appData)); }
+
+// ── Coin list cache ────────────────────────────────────────────────────
+async function loadCoinList() {
+    const cached = localStorage.getItem(COIN_LIST_KEY);
+    if (cached) {
+        const { coins, fetchedAt } = JSON.parse(cached);
+        if (Date.now() - fetchedAt < CACHE_TTL) { coinList = coins; return; }
+    }
+    try {
+        const res = await fetch(
+            'https://api.coingecko.com/api/v3/coins/markets' +
+            '?vs_currency=usd&order=market_cap_desc&per_page=50&page=1&sparkline=false'
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        coinList = data.map(c => ({ id: c.id, name: c.name, symbol: c.symbol.toUpperCase(), image: c.image }));
+        localStorage.setItem(COIN_LIST_KEY, JSON.stringify({ coins: coinList, fetchedAt: Date.now() }));
+    } catch (e) { console.warn('Could not fetch coin list:', e); }
+}
+
+// ── Per-coin logo cache (for coins outside top 50) ─────────────────────
+// logoCache: { [coinId]: { image, symbol, name, fetchedAt } }
+function getLogoCache() {
+    try { return JSON.parse(localStorage.getItem(LOGO_CACHE_KEY) || '{}'); } catch { return {}; }
+}
+function saveLogoCache(cache) {
+    localStorage.setItem(LOGO_CACHE_KEY, JSON.stringify(cache));
+}
+
+// Returns { image, symbol, name } from top-50 cache or logo cache.
+// If not found anywhere, fires a background fetch and returns null (card re-renders on completion).
+function getCoinMeta(id) {
+    // 1. Check top-50 list first
+    const inList = coinList.find(c => c.id === id);
+    if (inList) return inList;
+
+    // 2. Check logo cache — stale-while-revalidate:
+    //    always return what we have instantly, refresh quietly in background if stale
+    const cache = getLogoCache();
+    const entry = cache[id];
+    if (entry) {
+        if (Date.now() - entry.fetchedAt >= CACHE_TTL) fetchCoinMeta(id);
+        return entry;
+    }
+
+    // 3. Nothing cached at all — fetch in background, re-render when done
+    fetchCoinMeta(id);
+    return null;
+}
+
+async function fetchCoinMeta(id) {
+    try {
+        const res = await fetch(`https://api.coingecko.com/api/v3/coins/${id}?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const cache = getLogoCache();
+        cache[id] = {
+            id,
+            name:      data.name,
+            symbol:    data.symbol.toUpperCase(),
+            image:     data.image?.small || data.image?.thumb || null,
+            fetchedAt: Date.now()
         };
+        saveLogoCache(cache);
+        // Re-render cards so the logo appears
+        updateDashboardUI();
+    } catch (e) { console.warn(`Could not fetch meta for ${id}:`, e); }
+}
 
-        // Migrate V2 → V3 or load existing V3
-        const stored = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('retroCryptoDataV2');
-        if (stored) appData = JSON.parse(stored);
-
-        let cryptoPrices = {};
-        let coinList = []; // [{ id, name, symbol, image }]
-
-        function saveData() {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
-        }
-
-        // ── Coin list cache ────────────────────────────────────────────────
-        async function loadCoinList() {
-            const cached = localStorage.getItem(COIN_LIST_KEY);
-            if (cached) {
-                const { coins, fetchedAt } = JSON.parse(cached);
-                if (Date.now() - fetchedAt < CACHE_TTL) {
-                    coinList = coins;
-                    return;
-                }
-            }
-            try {
-                const res = await fetch(
-                    'https://api.coingecko.com/api/v3/coins/markets' +
-                    '?vs_currency=usd&order=market_cap_desc&per_page=50&page=1&sparkline=false'
-                );
-                if (!res.ok) return;
-                const data = await res.json();
-                coinList = data.map(c => ({
-                    id: c.id, name: c.name,
-                    symbol: c.symbol.toUpperCase(), image: c.image
-                }));
-                localStorage.setItem(COIN_LIST_KEY, JSON.stringify({ coins: coinList, fetchedAt: Date.now() }));
-            } catch (e) {
-                console.warn('Could not fetch coin list:', e);
-            }
-        }
-
-        // ── Price fetching ─────────────────────────────────────────────────
-        async function fetchPrices() {
-            const ids = [...new Set(
-                Object.values(appData.profiles)
-                    .flatMap(p => p.holdings.map(h => h.id))
-                    .concat(['bitcoin', 'ethereum', 'dogecoin', 'polkadot'])
-            )];
-            try {
-                const res = await fetch(
-                    `https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(',')}&vs_currencies=usd,thb`
-                );
-                if (res.ok) {
-                    cryptoPrices = await res.json();
-                    updateDashboardUI();
-                }
-            } catch (e) {
-                console.log('Price fetch failed — offline or rate limited.');
-            }
-        }
-
-        // ── Profile slots ──────────────────────────────────────────────────
-        function renderProfiles() {
-            const container = document.getElementById('profile-slots');
-            container.innerHTML = '';
-            Object.entries(appData.profiles).forEach(([key, profile]) => {
-                const isActive = appData.activeProfile === key;
-                const el = document.createElement('div');
-                el.className = `p-3 text-center cursor-pointer pixel-btn text-[10px] break-all ${
-                    isActive ? 'bg-cyan-700 border-yellow-400 text-white' : 'bg-zinc-800 hover:bg-zinc-700 text-gray-300'
-                }`;
-                el.innerText = profile.name;
-                el.onclick = () => selectProfile(key);
-                container.appendChild(el);
-            });
-        }
-
-        function selectProfile(key) {
-            appData.activeProfile = key;
-            saveData();
-            renderProfiles();
-            document.getElementById('dashboard').classList.remove('hidden');
-            document.getElementById('rename-btn').classList.remove('hidden');
+// ── Price fetching ─────────────────────────────────────────────────────
+async function fetchPrices() {
+    const profile = appData.activeProfile ? appData.profiles[appData.activeProfile] : null;
+    const portfolioIds = profile ? profile.holdings.map(h => h.id) : [];
+    const ids = [...new Set([...portfolioIds, 'bitcoin', 'ethereum', 'dogecoin', 'polkadot', 'tether'])];
+    try {
+        const res = await fetch(
+            `https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(',')}&vs_currencies=usd,thb&include_24hr_change=true`
+        );
+        if (res.ok) {
+            cryptoPrices = await res.json();
+            // Derive USD→THB rate from tether price if available
+            if (cryptoPrices.tether?.thb) usdToThb = cryptoPrices.tether.thb;
             updateDashboardUI();
         }
+    } catch (e) { console.log('Price fetch failed — offline or rate limited.'); }
+}
 
-        window.renameActiveProfile = function () {
-            if (!appData.activeProfile) return;
-            const profile = appData.profiles[appData.activeProfile];
-            const name = prompt('ENTER NEW NAME FOR THIS SAVE SLOT:', profile.name);
-            if (name?.trim()) {
-                profile.name = name.trim().toUpperCase();
-                saveData();
-                renderProfiles();
-                updateDashboardUI();
-            }
-        };
+// ── P&L helpers ────────────────────────────────────────────────────────
+// Convert any amount in given ccy to USD using live rate
+function toUSD(amount, ccy) {
+    return ccy === 'THB' ? amount / usdToThb : amount;
+}
+function toTHB(amount, ccy) {
+    return ccy === 'USD' ? amount * usdToThb : amount;
+}
 
-        // ── Dashboard ──────────────────────────────────────────────────────
-        const CARD_COLORS = {
-            bitcoin:  'text-amber-500',
-            ethereum: 'text-indigo-400',
-            dogecoin: 'text-yellow-500',
-            polkadot: 'text-pink-500',
-            solana:   'text-emerald-400'
-        };
-        const FALLBACK_ICONS = {
-            bitcoin: '🪙', ethereum: '💎', dogecoin: '🐕', polkadot: '🔮', solana: '☀️'
-        };
+function calcLotStats(lots) {
+    // Returns { totalAmount, totalCostUSD, totalCostTHB, avgCostUSD, avgCostTHB }
+    let totalAmount = 0, totalCostUSD = 0;
+    lots.forEach(l => {
+        const amt = parseFloat(l.amount) || 0;
+        const price = parseFloat(l.buyPrice) || 0;
+        totalAmount += amt;
+        totalCostUSD += toUSD(price * amt, l.ccy || 'USD');
+    });
+    const totalCostTHB = totalCostUSD * usdToThb;
+    const avgCostUSD = totalAmount > 0 ? totalCostUSD / totalAmount : 0;
+    const avgCostTHB = avgCostUSD * usdToThb;
+    return { totalAmount, totalCostUSD, totalCostTHB, avgCostUSD, avgCostTHB };
+}
 
-        function updateDashboardUI() {
-            if (!appData.activeProfile) return;
-            const profile = appData.profiles[appData.activeProfile];
-            document.getElementById('deck-title').innerText = `${profile.name} TOTAL VALUE`;
+// ── Profiles ───────────────────────────────────────────────────────────
+function renderProfiles() {
+    const container = document.getElementById('profile-slots');
+    container.innerHTML = '';
+    Object.entries(appData.profiles).forEach(([key, profile]) => {
+        const isActive = appData.activeProfile === key;
+        const el = document.createElement('div');
+        el.className = `p-3 text-center cursor-pointer pixel-btn text-[10px] break-all ${
+            isActive ? 'bg-cyan-700 border-yellow-400 text-white' : 'bg-zinc-800 hover:bg-zinc-700 text-gray-300'
+        }`;
+        el.innerText = profile.name;
+        el.onclick = () => selectProfile(key);
+        container.appendChild(el);
+    });
+}
 
-            let totalUSD = 0, totalTHB = 0;
-            const cardGrid = document.getElementById('card-grid');
-            cardGrid.innerHTML = '';
+function selectProfile(key) {
+    appData.activeProfile = key;
+    saveData();
+    renderProfiles();
+    document.getElementById('dashboard').classList.remove('hidden');
+    document.getElementById('rename-btn').classList.remove('hidden');
+    fetchPrices();
+}
 
-            profile.holdings.forEach((holding, index) => {
-                const prices = cryptoPrices[holding.id] || { usd: 0, thb: 0 };
-                const valueUSD = holding.amount * prices.usd;
-                const valueTHB = holding.amount * prices.thb;
-                totalUSD += valueUSD;
-                totalTHB += valueTHB;
+window.renameActiveProfile = function () {
+    if (!appData.activeProfile) return;
+    const profile = appData.profiles[appData.activeProfile];
+    const name = prompt('ENTER NEW NAME FOR THIS SAVE SLOT:', profile.name);
+    if (name?.trim()) {
+        profile.name = name.trim().toUpperCase();
+        saveData(); renderProfiles(); updateDashboardUI();
+    }
+};
 
-                const meta = coinList.find(c => c.id === holding.id);
-                const logoHTML = meta?.image
-                    ? `<img src="${meta.image}" style="width:48px;height:48px;image-rendering:pixelated;" alt="${holding.id}">`
-                    : `<span style="font-size:2rem">${FALLBACK_ICONS[holding.id] || '🪙'}</span>`;
-                const symbolBadge = meta
-                    ? `<span class="text-[8px] text-gray-400 ml-1">${meta.symbol}</span>` : '';
+// ── Sort ───────────────────────────────────────────────────────────────
+window.setSort = function (mode) {
+    currentSort = mode;
+    document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('sort-' + mode)?.classList.add('active');
+    // Hide CUSTOM button unless we're in custom mode or custom order exists
+    const profile = appData.activeProfile ? appData.profiles[appData.activeProfile] : null;
+    const hasCustom = profile?.customOrder?.length > 0;
+    document.getElementById('sort-custom').style.display = hasCustom ? '' : 'none';
+    updateDashboardUI();
+};
 
-                const card = document.createElement('div');
-                card.className = 'bg-zinc-800 p-4 pixel-border flex flex-col justify-between border-gray-600';
-                card.innerHTML = `
-                    <div>
-                        <div class="flex justify-between items-start mb-4">
-                            <span class="text-[10px] ${CARD_COLORS[holding.id] || 'text-purple-400'} break-all">
-                                ${holding.id.toUpperCase()}${symbolBadge}
-                            </span>
-                            <button onclick="deleteCard(${index})" class="text-[9px] text-red-500 hover:text-red-400 cursor-pointer pl-2">[X]</button>
-                        </div>
-                        <div class="bg-black h-24 flex items-center justify-center pixel-border border-zinc-700 mb-4">
-                            ${logoHTML}
-                        </div>
-                        <div class="text-[9px] text-gray-400 mb-1">QTY: <span class="text-white">${holding.amount.toLocaleString()}</span></div>
-                    </div>
-                    <div class="mt-4 pt-2 border-t border-zinc-700">
-                        <div class="text-[9px] text-green-400">$${fmt(valueUSD)}</div>
-                        <div class="text-[9px] text-yellow-300">${fmt(valueTHB)} ฿</div>
-                    </div>`;
-                cardGrid.appendChild(card);
-            });
-
-            document.getElementById('total-usd').innerText = `$${fmt(totalUSD)} USD`;
-            document.getElementById('total-thb').innerText = `${fmt(totalTHB)} THB`;
-        }
-
-        const fmt = n => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-        // ── Autocomplete ───────────────────────────────────────────────────
-        const coinInput = document.getElementById('coin-id');
-        const acList    = document.getElementById('autocomplete-list');
-        let acResults   = [];
-        let acIndex     = -1;
-
-        coinInput.addEventListener('input', () => {
-            const q = coinInput.value.trim().toLowerCase();
-            acIndex = -1;
-            if (!q) return closeAC();
-            acResults = coinList.filter(c =>
-                c.id.includes(q) || c.name.toLowerCase().includes(q) || c.symbol.toLowerCase().includes(q)
-            ).slice(0, 8);
-            acResults.length ? renderAC() : closeAC();
+function sortedHoldings(holdings) {
+    if (currentSort === 'custom') {
+        const profile = appData.profiles[appData.activeProfile];
+        const order = profile.customOrder || [];
+        // Sort by custom order index; unrecognised ids go to end
+        return [...holdings].sort((a, b) => {
+            const ia = order.indexOf(a.id);
+            const ib = order.indexOf(b.id);
+            if (ia === -1 && ib === -1) return 0;
+            if (ia === -1) return 1;
+            if (ib === -1) return -1;
+            return ia - ib;
         });
+    }
+    return [...holdings].sort((a, b) => {
+        const pa = cryptoPrices[a.id] || {}, pb = cryptoPrices[b.id] || {};
+        const statsA = calcLotStats(a.lots || []);
+        const statsB = calcLotStats(b.lots || []);
+        const valA = statsA.totalAmount * (pa.usd || 0);
+        const valB = statsB.totalAmount * (pb.usd || 0);
+        const plA  = valA - statsA.totalCostUSD;
+        const plB  = valB - statsB.totalCostUSD;
+        if (currentSort === 'value')  return valB - valA;
+        if (currentSort === 'pl')     return plB - plA;
+        if (currentSort === 'change') return (pb.usd_24h_change || 0) - (pa.usd_24h_change || 0);
+        if (currentSort === 'name')   return a.id.localeCompare(b.id);
+        return 0;
+    });
+}
 
-        coinInput.addEventListener('keydown', e => {
-            const items = acList.querySelectorAll('.ac-item');
-            if (!items.length) return;
-            if (e.key === 'ArrowDown') { e.preventDefault(); acIndex = Math.min(acIndex + 1, items.length - 1); highlightAC(items); }
-            else if (e.key === 'ArrowUp') { e.preventDefault(); acIndex = Math.max(acIndex - 1, 0); highlightAC(items); }
-            else if (e.key === 'Enter' && acIndex >= 0) { e.preventDefault(); pickCoin(acResults[acIndex]); }
-            else if (e.key === 'Escape') closeAC();
+// ── Dashboard UI ───────────────────────────────────────────────────────
+function updateDashboardUI() {
+    if (!appData.activeProfile) return;
+    const profile = appData.profiles[appData.activeProfile];
+    document.getElementById('deck-title').innerText = `${profile.name} TOTAL VALUE`;
+
+    let totalUSD = 0, totalTHB = 0, totalCostUSD = 0;
+    const cardGrid = document.getElementById('card-grid');
+    cardGrid.innerHTML = '';
+
+    sortedHoldings(profile.holdings).forEach((holding) => {
+        // Find original index for edit/delete
+        const origIndex = profile.holdings.indexOf(holding);
+        const prices  = cryptoPrices[holding.id] || { usd: 0, thb: 0, usd_24h_change: 0 };
+        const stats   = calcLotStats(holding.lots || []);
+        const valueUSD = stats.totalAmount * prices.usd;
+        const valueTHB = stats.totalAmount * prices.thb;
+        const plUSD    = valueUSD - stats.totalCostUSD;
+        const plPct    = stats.totalCostUSD > 0 ? (plUSD / stats.totalCostUSD) * 100 : null;
+        const change24 = prices.usd_24h_change || 0;
+
+        totalUSD     += valueUSD;
+        totalTHB     += valueTHB;
+        totalCostUSD += stats.totalCostUSD;
+
+        const meta = getCoinMeta(holding.id);
+        const logoHTML = meta?.image
+            ? `<img src="${meta.image}" style="width:48px;height:48px;image-rendering:pixelated;" alt="${holding.id}">`
+            : `<span style="font-size:2rem">${FALLBACK_ICONS[holding.id] || '🪙'}</span>`;
+        const symbolBadge = meta ? `<span class="text-[8px] text-gray-400 ml-1">${meta.symbol}</span>` : '';
+
+        const plClass = plUSD > 0 ? 'pl-pos' : plUSD < 0 ? 'pl-neg' : 'pl-zero';
+        const plSign  = plUSD >= 0 ? '+' : '';
+        const plLine  = stats.totalCostUSD > 0
+            ? `<div class="text-[9px] ${plClass}">P&L: ${plSign}$${fmt(plUSD)} (${plSign}${fmt(plPct)}%)</div>`
+            : `<div class="text-[9px] text-gray-500">P&L: NO COST BASIS</div>`;
+
+        const changeClass = change24 >= 0 ? 'pl-pos' : 'pl-neg';
+        const changeSign  = change24 >= 0 ? '▲' : '▼';
+        const changeLine  = `<div class="text-[9px] ${changeClass}">24H: ${changeSign} ${Math.abs(change24).toFixed(2)}%</div>`;
+
+        // Location breakdown (compact)
+        const locs = holding.locations || [];
+        const locLines = locs.length > 0
+            ? locs.map(l => `<div class="text-[8px] text-gray-400">${l.label}: <span class="text-white">${fmtAmt(parseFloat(l.amount)||0)}</span></div>`).join('')
+            : '';
+
+        const hasLots = (holding.lots || []).length > 0;
+
+        const card = document.createElement('div');
+        card.className = 'crypto-card bg-zinc-800 p-4 pixel-border flex flex-col justify-between border-gray-600';
+        card.dataset.id = holding.id;
+        card.onclick = () => openModal(origIndex);
+        card.innerHTML = `
+            <div>
+                <div class="flex justify-between items-start mb-3">
+                    <span class="text-[10px] ${CARD_COLORS[holding.id] || 'text-purple-400'} break-all">
+                        ${holding.id.toUpperCase()}${symbolBadge}
+                    </span>
+                    <span class="text-[8px] text-gray-600">CLICK TO EDIT</span>
+                </div>
+                <div class="bg-black h-20 flex items-center justify-center pixel-border border-zinc-700 mb-3">
+                    ${logoHTML}
+                </div>
+                ${!hasLots ? `<div class="text-[8px] text-yellow-600 mb-2">⚠ ADD LOTS TO TRACK P&L</div>` : ''}
+                <div class="text-[9px] text-gray-400 mb-1">QTY: <span class="text-white">${fmtAmt(stats.totalAmount)}</span></div>
+            </div>
+            <div class="mt-3 pt-2 border-t border-zinc-700 space-y-1">
+                <div class="text-[9px] text-green-400">$${fmt(valueUSD)}</div>
+                <div class="text-[9px] text-yellow-300">${fmt(valueTHB)} ฿</div>
+                ${plLine}
+                ${changeLine}
+                ${locLines ? `<div class="border-t border-zinc-700 mt-2 pt-2">${locLines}</div>` : ''}
+            </div>`;
+        cardGrid.appendChild(card);
+    });
+
+    const totalPL    = totalUSD - totalCostUSD;
+    const totalPLPct = totalCostUSD > 0 ? (totalPL / totalCostUSD) * 100 : null;
+    const plClass    = totalPL >= 0 ? 'pl-pos' : 'pl-neg';
+    const plSign     = totalPL >= 0 ? '+' : '';
+
+    document.getElementById('total-usd').innerText = `$${fmt(totalUSD)} USD`;
+    document.getElementById('total-thb').innerText = `${fmt(totalTHB)} THB`;
+    document.getElementById('total-pl').innerHTML  = totalCostUSD > 0
+        ? `<span class="${plClass}">TOTAL P&L: ${plSign}$${fmt(totalPL)} (${plSign}${fmt(totalPLPct)}%)</span>`
+        : '';
+}
+
+const fmt    = n => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtAmt = n => parseFloat(n.toPrecision(8)).toLocaleString(undefined, { maximumFractionDigits: 8 });
+
+// ── Mint ───────────────────────────────────────────────────────────────
+window.mintCard = function () {
+    if (!appData.activeProfile) return alert('Please select a save slot first!');
+    const coinId = document.getElementById('coin-id').value.trim().toLowerCase();
+    if (!coinId) return alert('Please enter a coin ID.');
+    const profile = appData.profiles[appData.activeProfile];
+    if (profile.holdings.find(h => h.id === coinId)) return alert(`${coinId.toUpperCase()} is already in your deck.`);
+    profile.holdings.push({ id: coinId, lots: [], locations: [] });
+    saveData();
+    closeAC();
+    document.getElementById('coin-id').value = '';
+    fetchPrices();
+};
+
+// ── Modal ──────────────────────────────────────────────────────────────
+window.openModal = function (index) {
+    const profile = appData.profiles[appData.activeProfile];
+    const holding = profile.holdings[index];
+    modalIndex = index;
+    modalLots  = JSON.parse(JSON.stringify(holding.lots || []));
+    modalLocs  = JSON.parse(JSON.stringify(holding.locations || []));
+
+    const meta = getCoinMeta(holding.id);
+    const symbol = meta ? ` (${meta.symbol})` : '';
+    document.getElementById('modal-title').innerText = `EDIT: ${holding.id.toUpperCase()}${symbol}`;
+
+    renderLotsTable();
+    renderLocsTable();
+    document.getElementById('edit-modal').classList.add('open');
+    document.body.style.overflow = 'hidden';
+};
+
+window.closeModal = function () {
+    document.getElementById('edit-modal').classList.remove('open');
+    document.body.style.overflow = '';
+    modalIndex = null; modalLots = []; modalLocs = [];
+};
+
+window.saveModal = function () {
+    const profile = appData.profiles[appData.activeProfile];
+    // Read current inputs back into modalLots / modalLocs
+    readLotsFromDOM();
+    readLocsFromDOM();
+    profile.holdings[modalIndex].lots      = modalLots;
+    profile.holdings[modalIndex].locations = modalLocs;
+    saveData();
+    closeModal();
+    updateDashboardUI();
+};
+
+window.deleteCardModal = function () {
+    if (confirm('Delete this card from your deck?')) {
+        appData.profiles[appData.activeProfile].holdings.splice(modalIndex, 1);
+        saveData();
+        closeModal();
+        updateDashboardUI();
+    }
+};
+
+// ── Lots table ─────────────────────────────────────────────────────────
+window.addLot = function () {
+    readLotsFromDOM();
+    modalLots.push({ amount: '', buyPrice: '', ccy: 'USD', label: '' });
+    renderLotsTable();
+};
+
+window.removeLot = function (i) {
+    readLotsFromDOM();
+    modalLots.splice(i, 1);
+    renderLotsTable();
+};
+
+function readLotsFromDOM() {
+    const rows = document.querySelectorAll('#lots-body tr');
+    rows.forEach((row, i) => {
+        if (!modalLots[i]) return;
+        modalLots[i].amount   = row.querySelector('.lot-amt').value;
+        modalLots[i].buyPrice = row.querySelector('.lot-price').value;
+        modalLots[i].ccy      = row.querySelector('.lot-ccy').value;
+        modalLots[i].label    = row.querySelector('.lot-label').value;
+    });
+}
+
+function renderLotsTable() {
+    const tbody = document.getElementById('lots-body');
+    tbody.innerHTML = '';
+    modalLots.forEach((lot, i) => {
+        const tr = document.createElement('tr');
+        tr.className = 'border-b border-zinc-800';
+        tr.innerHTML = `
+            <td class="py-1 pr-1"><input class="lot-input lot-amt" type="number" step="any" placeholder="0.00" value="${lot.amount}" oninput="updateLotSummary()"></td>
+            <td class="py-1 pr-1"><input class="lot-input lot-price" type="number" step="any" placeholder="0.00" value="${lot.buyPrice}" oninput="updateLotSummary()"></td>
+            <td class="py-1 pr-1">
+                <select class="lot-input lot-ccy" onchange="updateLotSummary()">
+                    <option value="USD" ${lot.ccy==='USD'?'selected':''}>USD</option>
+                    <option value="THB" ${lot.ccy==='THB'?'selected':''}>THB</option>
+                </select>
+            </td>
+            <td class="py-1 pr-1"><input class="lot-input lot-label" type="text" placeholder="e.g. Bitkub" value="${lot.label}"></td>
+            <td class="py-1"><button onclick="removeLot(${i})" class="text-red-500 hover:text-red-300 cursor-pointer text-[10px] px-1">[x]</button></td>`;
+        tbody.appendChild(tr);
+    });
+    updateLotSummary();
+}
+
+window.updateLotSummary = function () {
+    // Read live values from DOM for real-time summary
+    const rows = document.querySelectorAll('#lots-body tr');
+    const liveLots = [];
+    rows.forEach(row => {
+        liveLots.push({
+            amount:   row.querySelector('.lot-amt').value,
+            buyPrice: row.querySelector('.lot-price').value,
+            ccy:      row.querySelector('.lot-ccy').value,
         });
+    });
+    const s = calcLotStats(liveLots);
+    const el = document.getElementById('lot-summary');
+    if (liveLots.length === 0) { el.innerHTML = '<span class="text-gray-600">No lots yet.</span>'; return; }
+    el.innerHTML = `
+        <div class="grid grid-cols-2 gap-x-4 gap-y-1">
+            <div class="text-gray-400">TOTAL QTY</div>  <div class="text-white">${fmtAmt(s.totalAmount)}</div>
+            <div class="text-gray-400">AVG COST</div>   <div class="text-white">$${fmt(s.avgCostUSD)} / ฿${fmt(s.avgCostTHB)}</div>
+            <div class="text-gray-400">TOTAL SPENT</div><div class="text-white">$${fmt(s.totalCostUSD)} / ฿${fmt(s.totalCostTHB)}</div>
+        </div>`;
+    updateLocSummary();
+};
 
-        document.addEventListener('click', e => {
-            if (!document.getElementById('coin-id-wrapper').contains(e.target)) closeAC();
-        });
+// ── Locations table ────────────────────────────────────────────────────
+window.addLocation = function () {
+    readLocsFromDOM();
+    modalLocs.push({ label: '', amount: '' });
+    renderLocsTable();
+};
 
-        function renderAC() {
-            acList.innerHTML = '';
-            acResults.forEach((coin, i) => {
-                const item = document.createElement('div');
-                item.className = 'ac-item';
-                item.innerHTML = `
-                    ${coin.image
-                        ? `<img class="ac-logo" src="${coin.image}" alt="${coin.symbol}" loading="lazy">`
-                        : `<div class="ac-logo-placeholder">${coin.symbol[0]}</div>`}
-                    <span class="ac-name">${coin.name}</span>
-                    <span class="ac-symbol">${coin.symbol}</span>
-                    <span class="ac-id">${coin.id}</span>`;
-                item.addEventListener('mousedown', e => { e.preventDefault(); pickCoin(coin); });
-                item.addEventListener('mouseover', () => { acIndex = i; highlightAC(acList.querySelectorAll('.ac-item')); });
-                acList.appendChild(item);
-            });
-            acList.classList.add('open');
-        }
+window.removeLoc = function (i) {
+    readLocsFromDOM();
+    modalLocs.splice(i, 1);
+    renderLocsTable();
+};
 
-        function highlightAC(items) {
-            items.forEach((el, i) => el.classList.toggle('active', i === acIndex));
-        }
+function readLocsFromDOM() {
+    const rows = document.querySelectorAll('#locs-body tr');
+    rows.forEach((row, i) => {
+        if (!modalLocs[i]) return;
+        modalLocs[i].label  = row.querySelector('.loc-label').value;
+        modalLocs[i].amount = row.querySelector('.loc-amt').value;
+    });
+}
 
-        function pickCoin(coin) {
-            coinInput.value = coin.id;
-            closeAC();
-            document.getElementById('coin-amount').focus();
-        }
+function renderLocsTable() {
+    const tbody = document.getElementById('locs-body');
+    tbody.innerHTML = '';
+    modalLocs.forEach((loc, i) => {
+        const tr = document.createElement('tr');
+        tr.className = 'border-b border-zinc-800';
+        tr.innerHTML = `
+            <td class="py-1 pr-1"><input class="loc-input loc-label" type="text" placeholder="e.g. Ledger" value="${loc.label}"></td>
+            <td class="py-1 pr-1"><input class="loc-input loc-amt" type="number" step="any" placeholder="0.00" value="${loc.amount}" oninput="updateLocSummary()"></td>
+            <td class="py-1"><button onclick="removeLoc(${i})" class="text-red-500 hover:text-red-300 cursor-pointer text-[10px] px-1">[x]</button></td>`;
+        tbody.appendChild(tr);
+    });
+    updateLocSummary();
+}
 
-        function closeAC() {
-            acList.classList.remove('open');
-            acList.innerHTML = '';
-            acResults = [];
-            acIndex = -1;
-        }
+window.updateLocSummary = function () {
+    // Read lot total from live DOM
+    const lotRows = document.querySelectorAll('#lots-body tr');
+    let lotTotal = 0;
+    lotRows.forEach(row => { lotTotal += parseFloat(row.querySelector('.lot-amt').value) || 0; });
 
-        // ── Form submit ────────────────────────────────────────────────────
-        document.getElementById('add-holding-form').addEventListener('submit', function (e) {
-            e.preventDefault();
-            if (!appData.activeProfile) return alert('Please select a save slot first!');
-            const coinId = coinInput.value.trim().toLowerCase();
-            const amount = parseFloat(document.getElementById('coin-amount').value);
-            if (!coinId || !(amount > 0)) return;
+    // Read loc total from live DOM
+    const locRows = document.querySelectorAll('#locs-body tr');
+    let locTotal = 0;
+    locRows.forEach(row => { locTotal += parseFloat(row.querySelector('.loc-amt').value) || 0; });
 
-            const profile = appData.profiles[appData.activeProfile];
-            const existing = profile.holdings.findIndex(h => h.id === coinId);
-            if (existing > -1) profile.holdings[existing].amount += amount;
-            else profile.holdings.push({ id: coinId, amount });
+    const diff = lotTotal - locTotal;
+    const el   = document.getElementById('loc-summary');
+    if (locRows.length === 0) { el.innerHTML = '<span class="text-gray-600">No locations yet.</span>'; return; }
 
-            saveData();
-            closeAC();
-            fetchPrices();
-            coinInput.value = '';
-            document.getElementById('coin-amount').value = '';
-        });
+    const diffColor = Math.abs(diff) < 0.000001 ? 'text-green-400' : 'text-yellow-400';
+    const diffLabel = Math.abs(diff) < 0.000001 ? '✓ BALANCED' : `DIFF: ${fmtAmt(Math.abs(diff))}`;
+    el.innerHTML = `
+        <div class="grid grid-cols-2 gap-x-4 gap-y-1">
+            <div class="text-gray-400">LOT TOTAL</div>  <div class="text-white">${fmtAmt(lotTotal)}</div>
+            <div class="text-gray-400">LOC TOTAL</div>  <div class="text-white">${fmtAmt(locTotal)}</div>
+            <div class="text-gray-400">BALANCE</div>    <div class="${diffColor}">${diffLabel}</div>
+        </div>`;
+};
 
-        window.deleteCard = function (index) {
-            if (confirm('Discard this card from your deck?')) {
-                appData.profiles[appData.activeProfile].holdings.splice(index, 1);
-                saveData();
-                updateDashboardUI();
-            }
-        };
+// ── Autocomplete ───────────────────────────────────────────────────────
+const coinInput = document.getElementById('coin-id');
+const acList    = document.getElementById('autocomplete-list');
+let acResults = [], acIndex = -1;
 
-        // ── Save code export / import ──────────────────────────────────────
-        window.exportSaveCode = function () {
-            const code = btoa(unescape(encodeURIComponent(JSON.stringify(appData))));
-            const input = document.createElement('input');
-            document.body.appendChild(input);
-            input.value = code;
-            input.select();
-            document.execCommand('copy');
-            document.body.removeChild(input);
-            alert('SAVE CODE COPIED TO CLIPBOARD!\n\nPaste it somewhere safe or use it to load your deck on another device.');
-        };
+coinInput.addEventListener('input', () => {
+    const q = coinInput.value.trim().toLowerCase();
+    acIndex = -1;
+    if (!q) return closeAC();
+    acResults = coinList.filter(c =>
+        c.id.includes(q) || c.name.toLowerCase().includes(q) || c.symbol.toLowerCase().includes(q)
+    ).slice(0, 8);
+    acResults.length ? renderAC() : closeAC();
+});
 
-        window.importSaveCode = function () {
-            const code = prompt('PASTE YOUR SAVE CODE HERE:');
-            if (!code) return;
-            try {
-                const parsed = JSON.parse(decodeURIComponent(escape(atob(code))));
-                if (!parsed.profiles) throw new Error();
-                appData = parsed;
-                saveData();
-                renderProfiles();
-                fetchPrices();
-                alert('SAVE DATA LOADED SUCCESSFULLY!');
-            } catch {
-                alert('INVALID SAVE CODE. Please verify you copied the entire string.');
-            }
-        };
+coinInput.addEventListener('keydown', e => {
+    const items = acList.querySelectorAll('.ac-item');
+    if (!items.length) return;
+    if      (e.key === 'ArrowDown' ) { e.preventDefault(); acIndex = Math.min(acIndex+1, items.length-1); highlightAC(items); }
+    else if (e.key === 'ArrowUp'   ) { e.preventDefault(); acIndex = Math.max(acIndex-1, 0);              highlightAC(items); }
+    else if (e.key === 'Enter' && acIndex >= 0) { e.preventDefault(); pickCoin(acResults[acIndex]); }
+    else if (e.key === 'Escape') closeAC();
+});
 
-        // ── Init ───────────────────────────────────────────────────────────
-        renderProfiles();
-        fetchPrices();
-        loadCoinList();
-        setInterval(fetchPrices, 30000);
-    </script>
+document.addEventListener('click', e => {
+    if (!document.getElementById('coin-id-wrapper').contains(e.target)) closeAC();
+});
+
+function renderAC() {
+    acList.innerHTML = '';
+    acResults.forEach((coin, i) => {
+        const item = document.createElement('div');
+        item.className = 'ac-item';
+        item.innerHTML = `
+            ${coin.image ? `<img class="ac-logo" src="${coin.image}" alt="${coin.symbol}" loading="lazy">` : `<div class="ac-logo-placeholder">${coin.symbol[0]}</div>`}
+            <span class="ac-name">${coin.name}</span>
+            <span class="ac-symbol">${coin.symbol}</span>
+            <span class="ac-id">${coin.id}</span>`;
+        item.addEventListener('mousedown', e => { e.preventDefault(); pickCoin(coin); });
+        item.addEventListener('mouseover', () => { acIndex = i; highlightAC(acList.querySelectorAll('.ac-item')); });
+        acList.appendChild(item);
+    });
+    acList.classList.add('open');
+}
+
+function highlightAC(items) { items.forEach((el, i) => el.classList.toggle('active', i === acIndex)); }
+function pickCoin(coin) { coinInput.value = coin.id; closeAC(); }
+function closeAC() { acList.classList.remove('open'); acList.innerHTML = ''; acResults = []; acIndex = -1; }
+
+// ── Save code ──────────────────────────────────────────────────────────
+window.exportSaveCode = function () {
+    const code = btoa(unescape(encodeURIComponent(JSON.stringify(appData))));
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    input.value = code; input.select(); document.execCommand('copy');
+    document.body.removeChild(input);
+    alert('SAVE CODE COPIED TO CLIPBOARD!\n\nPaste it somewhere safe or use it to load your deck on another device.');
+};
+
+window.importSaveCode = function () {
+    const code = prompt('PASTE YOUR SAVE CODE HERE:');
+    if (!code) return;
+    try {
+        const parsed = JSON.parse(decodeURIComponent(escape(atob(code))));
+        if (!parsed.profiles) throw new Error();
+        appData = parsed;
+        saveData(); renderProfiles(); fetchPrices();
+        alert('SAVE DATA LOADED SUCCESSFULLY!');
+    } catch { alert('INVALID SAVE CODE. Please verify you copied the entire string.'); }
+};
+
+// ── Init ───────────────────────────────────────────────────────────────
+renderProfiles();
+fetchPrices();
+loadCoinList();
+setInterval(fetchPrices, 30000);
+
+// Hide CUSTOM sort button until user has dragged
+document.getElementById('sort-custom').style.display = 'none';
+
+// Set up SortableJS on card grid
+Sortable.create(document.getElementById('card-grid'), {
+    animation: 150,
+    ghostClass: 'sortable-ghost',
+    dragClass:  'sortable-drag',
+    onEnd: function () {
+        if (!appData.activeProfile) return;
+        const profile = appData.profiles[appData.activeProfile];
+        // Read new order from DOM
+        const newOrder = [...document.querySelectorAll('#card-grid .crypto-card')]
+            .map(el => el.dataset.id);
+        profile.customOrder = newOrder;
+        saveData();
+        // Switch to custom sort and show the button
+        currentSort = 'custom';
+        document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById('sort-custom').style.display = '';
+        document.getElementById('sort-custom').classList.add('active');
+    }
+});
+</script>
 </body>
 </html>
