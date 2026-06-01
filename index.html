@@ -96,9 +96,41 @@
         /* Drag ghost */
         .sortable-ghost { opacity: 0.3; }
         .sortable-drag   { opacity: 0.9; cursor: grabbing; }
+
+        /* Loading screen */
+        #loading-screen {
+            position: fixed; inset: 0; z-index: 9999;
+            background: #121214;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center; gap: 24px;
+        }
+        #loading-screen.hidden { display: none; }
+        .loading-bar-track {
+            width: 280px; height: 16px;
+            border: 4px solid #fff; box-shadow: 4px 4px 0px #000;
+            background: #000;
+        }
+        .loading-bar-fill {
+            height: 100%; width: 0%;
+            background: #facc15;
+            transition: width 0.3s ease;
+        }
+        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+        .blink { animation: blink 1s step-start infinite; }
     </style>
 </head>
 <body class="p-4 md:p-8 min-h-screen flex flex-col items-center">
+
+<!-- ── Loading Screen ─────────────────────────────────────────────────── -->
+<div id="loading-screen">
+    <div class="text-yellow-400 text-sm">RETRO CRYPTO DECK</div>
+    <div class="text-[10px] text-gray-400" id="loading-status">BOOTING UP<span class="blink">_</span></div>
+    <div class="loading-bar-track">
+        <div class="loading-bar-fill" id="loading-bar"></div>
+    </div>
+    <div class="text-[8px] text-gray-600" id="loading-detail"></div>
+</div>
+
 
 <div class="max-w-4xl w-full">
 
@@ -234,11 +266,45 @@ const LOGO_CACHE_KEY = 'retroCryptoLogoCache';
 const CACHE_TTL     = 24 * 60 * 60 * 1000;
 
 const CARD_COLORS = {
-    bitcoin: 'text-amber-500', ethereum: 'text-indigo-400',
-    dogecoin: 'text-yellow-500', polkadot: 'text-pink-500', solana: 'text-emerald-400'
+    bitcoin:        'text-amber-500',
+    ethereum:       'text-indigo-400',
+    dogecoin:       'text-yellow-500',
+    polkadot:       'text-pink-500',
+    solana:         'text-emerald-400',
+    ripple:         'text-blue-400',
+    cardano:        'text-sky-400',
+    avalanche:      'text-red-400',
+    chainlink:      'text-blue-500',
+    'matic-network':'text-violet-400',
+    tron:           'text-red-500',
+    litecoin:       'text-gray-300',
+    'shiba-inu':    'text-orange-400',
+    uniswap:        'text-pink-400',
+    cosmos:         'text-indigo-300',
 };
+
+// Logo box: { border colour, box-shadow colour, gradient tint }
+const LOGO_BOX_STYLES = {
+    bitcoin:        { border: '#f59e0b', shadow: '#b45309', grad: '#1c1400' },
+    ethereum:       { border: '#818cf8', shadow: '#4338ca', grad: '#0f0f2e' },
+    dogecoin:       { border: '#fbbf24', shadow: '#92400e', grad: '#1c1700' },
+    polkadot:       { border: '#f472b6', shadow: '#9d174d', grad: '#1c0014' },
+    solana:         { border: '#34d399', shadow: '#065f46', grad: '#001c12' },
+    ripple:         { border: '#60a5fa', shadow: '#1d4ed8', grad: '#00101c' },
+    cardano:        { border: '#38bdf8', shadow: '#0369a1', grad: '#001018' },
+    avalanche:      { border: '#f87171', shadow: '#991b1b', grad: '#1c0000' },
+    chainlink:      { border: '#3b82f6', shadow: '#1e3a8a', grad: '#00081c' },
+    'matic-network':{ border: '#a78bfa', shadow: '#5b21b6', grad: '#0e001c' },
+    tron:           { border: '#ef4444', shadow: '#7f1d1d', grad: '#1c0000' },
+    litecoin:       { border: '#d1d5db', shadow: '#6b7280', grad: '#111111' },
+    'shiba-inu':    { border: '#fb923c', shadow: '#92400e', grad: '#1c0b00' },
+    uniswap:        { border: '#f472b6', shadow: '#831843', grad: '#1c0014' },
+    cosmos:         { border: '#a5b4fc', shadow: '#3730a3', grad: '#08001c' },
+};
+const LOGO_BOX_DEFAULT = { border: '#a78bfa', shadow: '#4c1d95', grad: '#0e001c' };
+
 const FALLBACK_ICONS = {
-    bitcoin: '🪙', ethereum: '💎', dogecoin: '🐕', polkadot: '🔮', solana: '☀️'
+    bitcoin: '₿', ethereum: 'Ξ', dogecoin: '🐕', polkadot: '●', solana: '◎'
 };
 
 // ── State ──────────────────────────────────────────────────────────────
@@ -264,6 +330,7 @@ if (stored) {
 }
 
 let cryptoPrices  = {};
+let isBooting     = true; // suppress UI updates during init
 let coinList      = [];
 let usdToThb      = 33; // fallback rate, updated from price data
 let currentSort   = 'value';
@@ -337,7 +404,7 @@ async function fetchCoinMeta(id) {
         };
         saveLogoCache(cache);
         // Re-render cards so the logo appears
-        updateDashboardUI();
+        if (!isBooting) updateDashboardUI();
     } catch (e) { console.warn(`Could not fetch meta for ${id}:`, e); }
 }
 
@@ -354,7 +421,7 @@ async function fetchPrices() {
             cryptoPrices = await res.json();
             // Derive USD→THB rate from tether price if available
             if (cryptoPrices.tether?.thb) usdToThb = cryptoPrices.tether.thb;
-            updateDashboardUI();
+            if (!isBooting) updateDashboardUI();
         }
     } catch (e) { console.log('Price fetch failed — offline or rate limited.'); }
 }
@@ -485,7 +552,8 @@ function updateDashboardUI() {
         totalTHB     += valueTHB;
         totalCostUSD += stats.totalCostUSD;
 
-        const meta = getCoinMeta(holding.id);
+        const lbs = LOGO_BOX_STYLES[holding.id] || LOGO_BOX_DEFAULT;
+        const logoBoxStyle = `background: linear-gradient(160deg, ${lbs.grad} 0%, #0a0a0a 100%); border: 4px solid ${lbs.border}; box-shadow: 4px 4px 0 ${lbs.shadow};`;
         const logoHTML = meta?.image
             ? `<img src="${meta.image}" style="width:48px;height:48px;image-rendering:pixelated;" alt="${holding.id}">`
             : `<span style="font-size:2rem">${FALLBACK_ICONS[holding.id] || '🪙'}</span>`;
@@ -521,7 +589,7 @@ function updateDashboardUI() {
                     </span>
                     <span class="text-[8px] text-gray-600">CLICK TO EDIT</span>
                 </div>
-                <div class="bg-black h-20 flex items-center justify-center pixel-border border-zinc-700 mb-3">
+                <div style="${logoBoxStyle}" class="h-20 flex items-center justify-center mb-3">
                     ${logoHTML}
                 </div>
                 ${!hasLots ? `<div class="text-[8px] text-yellow-600 mb-2">⚠ ADD LOTS TO TRACK P&L</div>` : ''}
@@ -813,11 +881,50 @@ window.importSaveCode = function () {
     } catch { alert('INVALID SAVE CODE. Please verify you copied the entire string.'); }
 };
 
+// ── Loading screen helpers ─────────────────────────────────────────────
+function setLoading(status, detail, pct) {
+    document.getElementById('loading-status').innerHTML = status + '<span class="blink">_</span>';
+    document.getElementById('loading-detail').innerText = detail || '';
+    document.getElementById('loading-bar').style.width = pct + '%';
+}
+function hideLoading() {
+    document.getElementById('loading-screen').classList.add('hidden');
+}
+
 // ── Init ───────────────────────────────────────────────────────────────
-renderProfiles();
-fetchPrices();
-loadCoinList();
-setInterval(fetchPrices, 30000);
+async function init() {
+    renderProfiles();
+
+    // Step 1 — load coin list (needed for autocomplete + logos)
+    setLoading('LOADING COIN LIST', 'Fetching top 50 coins...', 20);
+    await loadCoinList();
+
+    // Step 2 — fetch prices
+    setLoading('FETCHING PRICES', 'Getting latest market data...', 50);
+    await fetchPrices();
+
+    // Step 3 — if a profile is active, pre-fetch logos for non-top-50 coins
+    if (appData.activeProfile) {
+        const profile = appData.profiles[appData.activeProfile];
+        const nonTop50 = profile.holdings.filter(h => !coinList.find(c => c.id === h.id));
+        if (nonTop50.length > 0) {
+            setLoading('LOADING LOGOS', `Fetching ${nonTop50.length} coin logo(s)...`, 70);
+            await Promise.allSettled(nonTop50.map(h => {
+                const cache = getLogoCache();
+                // Only fetch if truly not cached at all
+                if (!cache[h.id]) return fetchCoinMeta(h.id);
+            }));
+        }
+    }
+
+    // Step 4 — all done, render and show
+    setLoading('READY', '', 100);
+    await new Promise(r => setTimeout(r, 300)); // brief pause so 100% bar is visible
+    isBooting = false;
+    hideLoading();
+    updateDashboardUI();
+    setInterval(fetchPrices, 30000);
+}
 
 // Hide CUSTOM sort button until user has dragged
 document.getElementById('sort-custom').style.display = 'none';
@@ -842,6 +949,7 @@ Sortable.create(document.getElementById('card-grid'), {
         document.getElementById('sort-custom').classList.add('active');
     }
 });
+init();
 </script>
 </body>
 </html>
