@@ -595,7 +595,7 @@ function updateDashboardUI() {
                     <span class="text-[10px] ${CARD_COLORS[holding.id] || 'text-purple-400'} break-all">
                         ${holding.id.toUpperCase()}${symbolBadge}
                     </span>
-                    <span class="text-[8px] text-gray-600">CLICK TO EDIT</span>
+                    <span class="text-[8px] text-gray-600">${isMobile ? 'HOLD TO DRAG' : 'CLICK TO EDIT'}</span>
                 </div>
                 <div style="${logoBoxStyle}" class="h-20 flex items-center justify-center mb-3">
                     ${logoHTML}
@@ -935,19 +935,21 @@ async function init() {
 document.getElementById('sort-custom').style.display = 'none';
 
 // Set up SortableJS on card grid
+const isMobile = window.matchMedia('(pointer: coarse)').matches;
 Sortable.create(document.getElementById('card-grid'), {
     animation: 150,
-    ghostClass: 'sortable-ghost',
-    dragClass:  'sortable-drag',
+    ghostClass:        'sortable-ghost',
+    dragClass:         'sortable-drag',
+    delay:             isMobile ? 300 : 0,   // 300ms long press on touch, instant on desktop
+    delayOnTouchOnly:  true,                  // delay only applies to touch, never affects mouse
+    touchStartThreshold: 5,                  // allow 5px movement before cancelling the hold
     onEnd: function () {
         if (!appData.activeProfile) return;
         const profile = appData.profiles[appData.activeProfile];
-        // Read new order from DOM
         const newOrder = [...document.querySelectorAll('#card-grid .crypto-card')]
             .map(el => el.dataset.id);
         profile.customOrder = newOrder;
         saveData();
-        // Switch to custom sort and show the button
         currentSort = 'custom';
         document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
         document.getElementById('sort-custom').style.display = '';
