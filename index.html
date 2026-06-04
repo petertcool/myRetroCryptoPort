@@ -331,6 +331,7 @@ if (stored) {
 
 let cryptoPrices  = {};
 let isBooting     = true; // suppress UI updates during init
+let fetchId       = 0;    // increments on every fetch; stale fetches are ignored
 let coinList      = [];
 let usdToThb      = 33; // fallback rate, updated from price data
 let currentSort   = 'value';
@@ -410,19 +411,21 @@ async function fetchCoinMeta(id) {
 
 // ── Price fetching ─────────────────────────────────────────────────────
 async function fetchPrices() {
-    const profile = appData.activeProfile ? appData.profiles[appData.activeProfile] : null;
-    const portfolioIds = profile ? profile.holdings.map(h => h.id) : [];
-    const ids = [...new Set([...portfolioIds, 'bitcoin', 'ethereum', 'dogecoin', 'polkadot', 'tether'])];
+    const myFetchId = ++fetchId; // capture this fetch's id
+    // Collect all coin IDs across ALL profiles so prices are ready when switching
+    const allIds = Object.values(appData.profiles).flatMap(p => p.holdings.map(h => h.id));
+    const ids = [...new Set([...allIds, 'bitcoin', 'ethereum', 'dogecoin', 'polkadot', 'tether'])];
     try {
         const res = await fetch(
             `https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(',')}&vs_currencies=usd,thb&include_24hr_change=true`
         );
-        if (res.ok) {
-            cryptoPrices = await res.json();
-            // Derive USD→THB rate from tether price if available
-            if (cryptoPrices.tether?.thb) usdToThb = cryptoPrices.tether.thb;
-            if (!isBooting) updateDashboardUI();
-        }
+        if (!res.ok) return;
+        const data = await res.json();
+        // Discard if a newer fetch has already started
+        if (myFetchId !== fetchId) return;
+        cryptoPrices = data;
+        if (cryptoPrices.tether?.thb) usdToThb = cryptoPrices.tether.thb;
+        if (!isBooting) updateDashboardUI();
     } catch (e) { console.log('Price fetch failed — offline or rate limited.'); }
 }
 
@@ -472,6 +475,10 @@ function selectProfile(key) {
     renderProfiles();
     document.getElementById('dashboard').classList.remove('hidden');
     document.getElementById('rename-btn').classList.remove('hidden');
+    // Render immediately with whatever prices we already have cached,
+    // so the UI never shows $0 while waiting for a new fetch
+    updateDashboardUI();
+    // Then refresh prices in the background (will re-render when done)
     fetchPrices();
 }
 
@@ -904,18 +911,15 @@ async function init() {
     setLoading('FETCHING PRICES', 'Getting latest market data...', 50);
     await fetchPrices();
 
-    // Step 3 — if a profile is active, pre-fetch logos for non-top-50 coins
-    if (appData.activeProfile) {
-        const profile = appData.profiles[appData.activeProfile];
-        const nonTop50 = profile.holdings.filter(h => !coinList.find(c => c.id === h.id));
-        if (nonTop50.length > 0) {
-            setLoading('LOADING LOGOS', `Fetching ${nonTop50.length} coin logo(s)...`, 70);
-            await Promise.allSettled(nonTop50.map(h => {
-                const cache = getLogoCache();
-                // Only fetch if truly not cached at all
-                if (!cache[h.id]) return fetchCoinMeta(h.id);
-            }));
-        }
+    // Step 3 — pre-fetch logos for ALL profiles so switching is instant
+    const allHoldings = Object.values(appData.profiles).flatMap(p => p.holdings);
+    const logoCache   = getLogoCache();
+    const needsLogo   = allHoldings.filter(h =>
+        !coinList.find(c => c.id === h.id) && !logoCache[h.id]
+    );
+    if (needsLogo.length > 0) {
+        setLoading('LOADING LOGOS', `Fetching ${needsLogo.length} coin logo(s)...`, 70);
+        await Promise.allSettled([...new Set(needsLogo.map(h => h.id))].map(id => fetchCoinMeta(id)));
     }
 
     // Step 4 — all done, render and show
